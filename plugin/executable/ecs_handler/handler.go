@@ -159,6 +159,10 @@ func (e *ECSHandler) addECS(qCtx *query_context.Context) (forwarded bool) {
 		clientAddr := qCtx.ServerMeta.ClientAddr
 		if clientAddr.IsValid() {
 			clientAddr = clientAddr.Unmap()
+			// Skip if client address is a local address
+			if clientAddr.IsLoopback() || clientAddr.IsPrivate() || clientAddr.IsLinkLocalUnicast() {
+				return false
+			}
 			var ecs *dns.EDNS0_SUBNET
 			if clientAddr.Is4() {
 				ecs = newSubnet(clientAddr.AsSlice(), uint8(e.args.Mask4), false)

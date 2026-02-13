@@ -1,0 +1,37 @@
+log:
+  level: info
+
+plugins:
+  # 转发至 Google 服务器的插件
+  - tag: forward_google
+    type: forward
+    args:
+      upstreams:
+        - addr: https://8.8.8.8/dns-query
+
+  - tag: local_ecs
+    type: "ecs_handler"
+    args:
+      forward: true # 是否转发来自下游的 ecs
+      send: true # 是否发送 ecs
+      mask4: 24
+      mask6: 48
+
+  - tag: ecs_route
+    type: sequence
+    args:
+      - exec: $local_ecs
+      - matches: has_ecs
+        exec: $forward_google
+      - matches: "!has_ecs"
+        exec: $forward_google
+
+  # 在同一端口启动 udp 和 tcp 服务器。
+  - type: udp_server
+    args:
+      entry: ecs_route
+      listen: 127.0.0.1:5533
+  - type: tcp_server
+    args:
+      entry: ecs_route
+      listen: 127.0.0.1:5533
