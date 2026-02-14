@@ -52,7 +52,28 @@ func getMsgKey(q *dns.Msg) string {
 	)
 
 	question := q.Question[0]
-	buf := make([]byte, 1+2+1+len(question.Name)) // bits + qtype + qname length + qname
+
+	// Check if query has ECS option
+	var ecsData []byte
+	if opt := q.IsEdns0(); opt != nil {
+		for _, o := range opt.Option {
+			if o.Option() == dns.EDNS0SUBNET {
+				ecs := o.(*dns.EDNS0_SUBNET)
+				// Encode ECS: family(2 bytes) + source netmask(1 byte) + address
+				ecsData = make([]byte, 3+len(ecs.Address))
+				ecsData[0] = byte(ecs.Family >> 8)
+				ecsData[1] = byte(ecs.Family)
+				ecsData[2] = ecs.SourceNetmask
+				copy(ecsData[3:], ecs.Address)
+				break
+			}
+		}
+	}
+
+	// Calculate buffer size: bits + qtype + qname length + qname + ecs length + ecs data
+	bufSize := 1 + 2 + 1 + len(question.Name) + 1 + len(ecsData)
+	buf := make([]byte, bufSize)
+
 	b := byte(0)
 	// RFC 6840 5.7: The AD bit in a query as a signal
 	// indicating that the requester understands and is interested in the
@@ -67,10 +88,20 @@ func getMsgKey(q *dns.Msg) string {
 		b = b | doBit
 	}
 	buf[0] = b
-	buf[1] = byte(question.Qtype << 8)
+	buf[1] = byte(question.Qtype >> 8)
 	buf[2] = byte(question.Qtype)
 	buf[3] = byte(len(question.Name))
-	copy(buf[4:], question.Name)
+	offset := 4
+	copy(buf[offset:], question.Name)
+	offset += len(question.Name)
+
+	// Append ECS data
+	buf[offset] = byte(len(ecsData))
+	offset++
+	if len(ecsData) > 0 {
+		copy(buf[offset:], ecsData)
+	}
+
 	return utils.BytesToStringUnsafe(buf)
 }
 
