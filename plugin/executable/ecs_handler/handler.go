@@ -189,7 +189,11 @@ func newSubnet(ip net.IP, mask uint8, v6 bool) *dns.EDNS0_SUBNET {
 
 	edns0Subnet.SourceNetmask = mask
 	edns0Subnet.Code = dns.EDNS0SUBNET
-	edns0Subnet.Address = ip
+	// RFC 7871 §6: the ADDRESS field MUST be truncated to the SOURCE
+	// PREFIX-LENGTH with trailing bits set to 0. miekg/dns packs Address
+	// as-is, so truncate here to avoid leaking the client's host bits to
+	// the upstream resolver.
+	edns0Subnet.Address = truncateIP(ip, int(mask))
 
 	// SCOPE PREFIX-LENGTH, an unsigned octet representing the leftmost
 	// number of significant bits of ADDRESS that the response covers.
@@ -197,6 +201,39 @@ func newSubnet(ip net.IP, mask uint8, v6 bool) *dns.EDNS0_SUBNET {
 	// https://tools.ietf.org/html/rfc7871
 	edns0Subnet.SourceScope = 0
 	return edns0Subnet
+}
+
+// truncateIP returns a copy of ip with all bits beyond the first mask bits
+// set to 0, as required by RFC 7871 §6 for the ECS ADDRESS field. It never
+// mutates the caller's slice.
+func truncateIP(ip net.IP, mask int) net.IP {
+	// Normalize to the canonical 4-byte (IPv4) or 16-byte (IPv6) form.
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	} else {
+		ip = ip.To16()
+	}
+	out := make(net.IP, len(ip))
+	copy(out, ip)
+
+	if mask < 0 {
+		mask = 0
+	}
+	totalBits := len(out) * 8
+	if mask > totalBits {
+		mask = totalBits
+	}
+
+	fullBytes := mask / 8
+	for i := fullBytes; i < len(out); i++ {
+		if i == fullBytes && mask%8 != 0 {
+			// Keep only the top (mask%8) bits of this byte.
+			out[i] &= byte(0xFF << (8 - mask%8))
+		} else {
+			out[i] = 0
+		}
+	}
+	return out
 }
 
 // QuickSetup format:
