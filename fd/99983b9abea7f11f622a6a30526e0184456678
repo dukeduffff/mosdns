@@ -1,0 +1,14 @@
+plugin/executable/ecs_handler/handler.go
+  h_e700a2a71030ef 192-196,206-238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "fd99983b9abea7f11f622a6a30526e0184456678",
+  "prompts": {},
+  "humans": {
+    "h_e700a2a71030ef": {
+      "author": "张大炮 <dujian0327@gmail.com>"
+    }
+  }
+}
