@@ -22,10 +22,12 @@ package domain_set
 import (
 	"bytes"
 	"fmt"
+	"os"
+
 	"github.com/IrineSistiana/mosdns/v5/coremain"
+	"github.com/IrineSistiana/mosdns/v5/pkg/geodata"
 	"github.com/IrineSistiana/mosdns/v5/pkg/matcher/domain"
 	"github.com/IrineSistiana/mosdns/v5/plugin/data_provider"
-	"os"
 )
 
 const PluginType = "domain_set"
@@ -62,8 +64,8 @@ func (d *DomainSet) GetDomainMatcher() domain.Matcher[struct{}] {
 func NewDomainSet(bp *coremain.BP, args *Args) (*DomainSet, error) {
 	ds := &DomainSet{}
 
-	m := domain.NewDomainMixMatcher()
-	if err := LoadExpsAndFiles(args.Exps, args.Files, m); err != nil {
+	m, err := LoadMatcher(args.Exps, args.Files, bp.M().Geodata().GeoSite)
+	if err != nil {
 		return nil, err
 	}
 	if m.Len() > 0 {
@@ -81,6 +83,27 @@ func NewDomainSet(bp *coremain.BP, args *Args) (*DomainSet, error) {
 	return ds, nil
 }
 
+// LoadMatcher builds a domain matcher from inline expressions, GeoSite references and text files.
+func LoadMatcher(exps, files []string, geositePath string) (*domain.MixMatcher[struct{}], error) {
+	m := domain.NewDomainMixMatcher()
+	if err := loadExps(exps, func(exp string) error {
+		path, tag, err := geodata.ParseGeoSiteRef(exp, geositePath)
+		if err != nil {
+			return err
+		}
+		if path != "" {
+			return geodata.LoadGeoSite(path, tag, m)
+		}
+		return m.Add(exp, struct{}{})
+	}); err != nil {
+		return nil, err
+	}
+	if err := LoadFiles(files, m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func LoadExpsAndFiles(exps []string, fs []string, m *domain.MixMatcher[struct{}]) error {
 	if err := LoadExps(exps, m); err != nil {
 		return err
@@ -92,8 +115,12 @@ func LoadExpsAndFiles(exps []string, fs []string, m *domain.MixMatcher[struct{}]
 }
 
 func LoadExps(exps []string, m *domain.MixMatcher[struct{}]) error {
+	return loadExps(exps, func(exp string) error { return m.Add(exp, struct{}{}) })
+}
+
+func loadExps(exps []string, add func(string) error) error {
 	for i, exp := range exps {
-		if err := m.Add(exp, struct{}{}); err != nil {
+		if err := add(exp); err != nil {
 			return fmt.Errorf("failed to load expression #%d %s, %w", i, exp, err)
 		}
 	}

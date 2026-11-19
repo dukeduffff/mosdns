@@ -36,7 +36,8 @@ import (
 )
 
 type Mosdns struct {
-	logger *zap.Logger // non-nil logger.
+	logger  *zap.Logger // non-nil logger.
+	geodata GeodataConfig
 
 	// Plugins
 	plugins map[string]any
@@ -44,6 +45,11 @@ type Mosdns struct {
 	httpMux    *chi.Mux
 	metricsReg *prometheus.Registry
 	sc         *safe_close.SafeClose
+}
+
+// Geodata returns the file paths configured in the main configuration.
+func (m *Mosdns) Geodata() GeodataConfig {
+	return m.geodata
 }
 
 // NewMosdns initializes a mosdns instance and its plugins.
@@ -56,6 +62,7 @@ func NewMosdns(cfg *Config) (*Mosdns, error) {
 
 	m := &Mosdns{
 		logger:     lg,
+		geodata:    cfg.Geodata,
 		plugins:    make(map[string]any),
 		httpMux:    chi.NewRouter(),
 		metricsReg: newMetricsReg(),

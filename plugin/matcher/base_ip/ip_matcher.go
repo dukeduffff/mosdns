@@ -68,14 +68,11 @@ func NewMatcher(bq sequence.BQ, args *Args, f MatchFunc) (m *Matcher, err error)
 
 	// Anonymous set from plugin's args and files.
 	if len(args.IPs)+len(args.Files) > 0 {
-		anonymousList := netlist.NewList()
-		if err := ip_set.LoadFromIPsAndFiles(args.IPs, args.Files, anonymousList); err != nil {
+		anonymousSets, err := ip_set.LoadMatchers(args.IPs, args.Files, bq.M().Geodata().GeoIP)
+		if err != nil {
 			return nil, err
 		}
-		anonymousList.Sort()
-		if anonymousList.Len() > 0 {
-			m.mg = append(m.mg, anonymousList)
-		}
+		m.mg = append(m.mg, anonymousSets...)
 	}
 
 	return m, nil

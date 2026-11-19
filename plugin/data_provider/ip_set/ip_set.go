@@ -22,12 +22,15 @@ package ip_set
 import (
 	"bytes"
 	"fmt"
-	"github.com/IrineSistiana/mosdns/v5/coremain"
-	"github.com/IrineSistiana/mosdns/v5/pkg/matcher/netlist"
-	"github.com/IrineSistiana/mosdns/v5/plugin/data_provider"
 	"net/netip"
 	"os"
 	"strings"
+
+	"github.com/IrineSistiana/mosdns/v5/coremain"
+	"github.com/IrineSistiana/mosdns/v5/pkg/geodata"
+	"github.com/IrineSistiana/mosdns/v5/pkg/matcher/netlist"
+	"github.com/IrineSistiana/mosdns/v5/plugin/data_provider"
+	"go4.org/netipx"
 )
 
 const PluginType = "ip_set"
@@ -57,16 +60,11 @@ func (d *IPSet) GetIPMatcher() netlist.Matcher {
 }
 
 func NewIPSet(bp *coremain.BP, args *Args) (*IPSet, error) {
-	p := &IPSet{}
-
-	l := netlist.NewList()
-	if err := LoadFromIPsAndFiles(args.IPs, args.Files, l); err != nil {
+	mg, err := LoadMatchers(args.IPs, args.Files, bp.M().Geodata().GeoIP)
+	if err != nil {
 		return nil, err
 	}
-	l.Sort()
-	if l.Len() > 0 {
-		p.mg = append(p.mg, l)
-	}
+	p := &IPSet{mg: mg}
 	for _, tag := range args.Sets {
 		provider, _ := bp.M().GetPlugin(tag).(data_provider.IPMatcherProvider)
 		if provider == nil {
@@ -75,6 +73,45 @@ func NewIPSet(bp *coremain.BP, args *Args) (*IPSet, error) {
 		p.mg = append(p.mg, provider.GetIPMatcher())
 	}
 	return p, nil
+}
+
+// LoadMatchers builds matchers from inline IPs, CIDRs, GeoIP references and text files.
+func LoadMatchers(ips, files []string, geoipPath string) (MatcherGroup, error) {
+	l := netlist.NewList()
+	builders := make(map[bool]*netipx.IPSetBuilder, 2)
+	if err := loadIPs(ips, l, func(rule string) (bool, error) {
+		path, tag, reverse, err := geodata.ParseGeoIPRef(rule, geoipPath)
+		if err != nil || path == "" {
+			return false, err
+		}
+		builder := builders[reverse]
+		if builder == nil {
+			builder = new(netipx.IPSetBuilder)
+			builders[reverse] = builder
+		}
+		return true, geodata.LoadGeoIP(path, tag, builder.AddPrefix)
+	}); err != nil {
+		return nil, err
+	}
+	if err := LoadFromFiles(files, l); err != nil {
+		return nil, err
+	}
+	var mg MatcherGroup
+	l.Sort()
+	if l.Len() > 0 {
+		mg = append(mg, l)
+	}
+	// Xray combines negated GeoIP references before complementing their union.
+	for _, reverse := range [...]bool{false, true} {
+		if builder := builders[reverse]; builder != nil {
+			set, err := builder.IPSet()
+			if err != nil {
+				return nil, err
+			}
+			mg = append(mg, geoIPMatcher{set: set, reverse: reverse})
+		}
+	}
+	return mg, nil
 }
 
 func parseNetipPrefix(s string) (netip.Prefix, error) {
@@ -99,7 +136,20 @@ func LoadFromIPsAndFiles(ips []string, fs []string, l *netlist.List) error {
 }
 
 func LoadFromIPs(ips []string, l *netlist.List) error {
+	return loadIPs(ips, l, nil)
+}
+
+func loadIPs(ips []string, l *netlist.List, loadGeoIP func(string) (bool, error)) error {
 	for i, s := range ips {
+		if loadGeoIP != nil {
+			loaded, err := loadGeoIP(s)
+			if err != nil {
+				return fmt.Errorf("invalid ip #%d %s, %w", i, s, err)
+			}
+			if loaded {
+				continue
+			}
+		}
 		p, err := parseNetipPrefix(s)
 		if err != nil {
 			return fmt.Errorf("invalid ip #%d %s, %w", i, s, err)
@@ -129,6 +179,15 @@ func LoadFromFile(f string, l *netlist.List) error {
 		}
 	}
 	return nil
+}
+
+type geoIPMatcher struct {
+	set     *netipx.IPSet
+	reverse bool
+}
+
+func (m geoIPMatcher) Match(addr netip.Addr) bool {
+	return addr.IsValid() && (m.set.Contains(addr.Unmap()) != m.reverse)
 }
 
 type MatcherGroup []netlist.Matcher

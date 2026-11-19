@@ -28,6 +28,12 @@ type Config struct {
 	Include []string       `yaml:"include"`
 	Plugins []PluginConfig `yaml:"plugins"`
 	API     APIConfig      `yaml:"api"`
+	Geodata GeodataConfig  `yaml:"geodata"`
+}
+
+type GeodataConfig struct {
+	GeoSite string `yaml:"geosite"`
+	GeoIP   string `yaml:"geoip"`
 }
 
 // PluginConfig represents a plugin config

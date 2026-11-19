@@ -1,7 +1,26 @@
 log:
   level: info
 
+# 可选。默认从 mosdns 的工作目录读取 geosite.dat 和 geoip.dat。
+# 下方配置和 ext 引用中的相对路径都以该目录为基准，可用 start -d 指定工作目录。
+# geodata:
+#   geosite: ./geosite.dat
+#   geoip: ./geoip.dat
+
 plugins:
+  # .dat 文件可通过标签引用，也可与普通规则混用。
+  # 域名外部文件支持 ext、ext-domain、ext-site。
+  # IP 外部文件支持 ext、ext-ip，规则开头和标签开头的 ! 都可取反。
+  # - tag: domain_cn
+  #   type: domain_set
+  #   args:
+  #     exps: ['geosite:cn', 'ext-site:./custom-site.dat:google@cn', 'domain:example.cn']
+  # - tag: ip_cn
+  #   type: ip_set
+  #   args:
+  #     ips: ['geoip:cn', 'ext-ip:./custom-ip.dat:private', '192.0.2.0/24']
+  # 这些写法也可直接用于 sequence 的 qname、resp_ip 等匹配器。
+
   # 转发至 Google 服务器的插件
   - tag: forward_google
     type: forward
