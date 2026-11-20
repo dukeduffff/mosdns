@@ -1,4 +1,4 @@
-FROM --platform=${TARGETPLATFORM} golang:latest as builder
+FROM --platform=${TARGETPLATFORM} golang:1.27.4 as builder
 
 ARG CGO_ENABLED=0
 
